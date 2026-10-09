@@ -68,9 +68,11 @@ singtui -h           # print help
 | `a` | **Add** — new config from built-in template (next free port) |
 | `b` | **Import** — read clipboard (share URI or full sing-box JSON) |
 | `e` | **Edit** — open selected config in `$EDITOR` (default `nano`) |
-| `s` | **Start** selected instance |
+| `s` | **Start** selected instance (one-shot) |
 | `x` | **Stop** selected instance |
 | `r` | **Restart** selected instance |
+| `n` | **Enable** unit (start on login) |
+| `m` | **Disable** unit (no auto-start) |
 | `p` | **Ping** selected (must be up) |
 | `P` | **Ping all** currently-up instances |
 | `g` | **Geo** (country code via ip-api.com, must be up) |

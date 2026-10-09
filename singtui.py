@@ -5,7 +5,7 @@ SingTUI — dual-pane multi-instance manager for sing-box
 Written by AI (Grok, built by xAI).
 
   a Add (from template)   b Import from clipboard (URI or JSON)
-  e Edit   s Start   x Stop   r Restart
+  e Edit   s Start   x Stop   r Restart   n Enable   m Disable
   p Ping selected (must be up)   P Ping all up
   g Geo (must be up)   d Remove   q Quit
 
@@ -74,6 +74,8 @@ ACTIONS = [
     ("Start",   "s", "start"),
     ("Stop",    "x", "stop"),
     ("Restart", "r", "restart"),
+    ("Enable",  "n", "enable"),
+    ("Disable", "m", "disable"),
     ("Ping",    "p", "ping"),
     ("Geo",     "g", "geo"),
     ("Remove",  "d", "remove"),
@@ -837,21 +839,34 @@ def service_status(config):
 
 
 def service_action(config, action):
+    """
+    start/stop/restart — one-shot runtime control.
+    enable/disable — persist across login (systemd user unit).
+    """
     if not unit_path(config).exists():
         try:
             install_unit(config)
         except Exception as e:
             return False, str(e)
+    uname = unit_name(config)
     try:
         r = subprocess.run(
-            ["systemctl", "--user", action, unit_name(config)],
+            ["systemctl", "--user", action, uname],
             capture_output=True, text=True, timeout=15,
         )
         if r.returncode == 0:
-            return True, f"{short_name(config)} {action}ed"
+            verbs = {
+                "start": "started",
+                "stop": "stopped",
+                "restart": "restarted",
+                "enable": "enabled",
+                "disable": "disabled",
+            }
+            return True, f"{short_name(config)} {verbs.get(action, action)}"
         return False, (r.stderr or r.stdout or f"{action} failed").strip()
     except Exception as e:
         return False, str(e)
+
 
 
 def remove_config(config):
@@ -1298,6 +1313,7 @@ class DualPane:
                 ("Enter", PAIR_KEY), ("  ", PAIR_DIM),
                 ("a", PAIR_KEY), ("b", PAIR_KEY), ("e", PAIR_KEY),
                 ("s", PAIR_KEY), ("x", PAIR_KEY), ("r", PAIR_KEY),
+                ("n", PAIR_KEY), ("m", PAIR_KEY),
                 ("p", PAIR_KEY), ("P", PAIR_KEY), ("g", PAIR_KEY),
                 ("d", PAIR_KEY), ("q", PAIR_KEY),
             ]
@@ -1353,13 +1369,13 @@ class DualPane:
             clear_config_cache(cfg)
             return None
 
-        if aid in ("start", "stop", "restart"):
+        if aid in ("start", "stop", "restart", "enable", "disable"):
             if not cfg:
                 toast(scr, "no config", error=True)
                 return None
             ok, msg = service_action(cfg, aid)
             self.inv_status(cfg)
-            if aid in ("stop", "restart"):
+            if aid in ("stop", "restart", "disable"):
                 clear_config_cache(cfg)
             toast(scr, msg, error=not ok)
             return None
