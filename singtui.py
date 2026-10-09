@@ -838,6 +838,24 @@ def service_status(config):
         return "?"
 
 
+def service_enabled(config):
+    """Return 'on' if unit is enabled, 'off' otherwise (or '—' if no unit)."""
+    if not unit_path(config).exists():
+        return "—"
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "is-enabled", unit_name(config)],
+            capture_output=True, text=True, timeout=5,
+        )
+        state = (r.stdout or "").strip()
+        # enabled / enabled-runtime / static / alias → treat enabled-ish as on
+        if state in ("enabled", "enabled-runtime"):
+            return "on"
+        return "off"
+    except Exception:
+        return "?"
+
+
 def service_action(config, action):
     """
     start/stop/restart — one-shot runtime control.
@@ -1163,6 +1181,7 @@ class DualPane:
         self.act_idx = 0
         self.cfg_scroll = 0
         self._st_cache = {}
+        self._en_cache = {}
         self._st_ttl = 2.0
         self.busy = ""
 
@@ -1185,11 +1204,22 @@ class DualPane:
         self._st_cache[name] = (now, st)
         return st
 
+    def enabled(self, name):
+        now = time.time()
+        hit = self._en_cache.get(name)
+        if hit and now - hit[0] < self._st_ttl:
+            return hit[1]
+        en = service_enabled(name)
+        self._en_cache[name] = (now, en)
+        return en
+
     def inv_status(self, name=None):
         if name:
             self._st_cache.pop(name, None)
+            self._en_cache.pop(name, None)
         else:
             self._st_cache.clear()
+            self._en_cache.clear()
 
     def draw(self):
         scr = self.stdscr
@@ -1236,13 +1266,14 @@ class DualPane:
                     break
                 name = cfgs[idx]
                 st = self.status(name)
+                en = self.enabled(name)
                 ping = cached_ping(name)
                 geo = cached_geo(name)
                 num = config_number(name) or (idx + 1)
                 endpoint = outbound_endpoint(name)
-                # "1. 146.70.61.18:8080  up  45ms  DE"
+                # "1. host:port  up  on  45ms  DE"
                 head = f"{num}. {endpoint}"
-                parts = [head, st]
+                parts = [head, st, en]
                 if ping:
                     parts.append(ping)
                 if geo:
@@ -1262,12 +1293,22 @@ class DualPane:
                     cx = 2 + len(name_part)
                     if cx >= left_w - 2:
                         continue
+                    # active state
                     pair = PAIR_UP if st == "up" else (PAIR_ERR if st == "fail" else PAIR_DIM)
                     safe_addstr(
                         scr, y, cx, st,
                         curses.color_pair(pair) | (curses.A_BOLD if st == "up" else 0),
                     )
-                    cx += len(st)
+                    cx += len(st) + 2
+                    if cx >= left_w - 2:
+                        continue
+                    # enabled state
+                    en_pair = PAIR_KEY if en == "on" else PAIR_DIM
+                    safe_addstr(
+                        scr, y, cx, en,
+                        curses.color_pair(en_pair) | (curses.A_BOLD if en == "on" else 0),
+                    )
+                    cx += len(en)
                     rest = ""
                     if ping:
                         rest += f"  {ping}"
